@@ -63,6 +63,7 @@ type WebServiceOptions struct {
 	AlertsHandler   *AlertsHandler
 	ConsolesHandler *ConsolesHandler
 	GraphsHandler   *GraphsHandler
+	Federation      *Federation
 }
 
 // NewWebService returns a new WebService.
@@ -110,6 +111,8 @@ func NewWebService(o *WebServiceOptions) *WebService {
 	if *enableQuit {
 		router.Post("/-/quit", ws.quitHandler)
 	}
+
+	router.Get("/federate", instr("federate", o.Federation))
 
 	return ws
 }

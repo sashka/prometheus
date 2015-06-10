@@ -196,6 +196,10 @@ func NewPrometheus() *prometheus {
 		QueryEngine: queryEngine,
 	}
 
+	federationHandler := &web.Federation{
+		Storage: memStorage,
+	}
+
 	webService := web.NewWebService(&web.WebServiceOptions{
 		PathPrefix:      *pathPrefix,
 		StatusHandler:   prometheusStatus,
@@ -204,6 +208,7 @@ func NewPrometheus() *prometheus {
 		ConsolesHandler: consolesHandler,
 		AlertsHandler:   alertsHandler,
 		GraphsHandler:   graphsHandler,
+		Federation:      federationHandler,
 	})
 
 	p := &prometheus{
