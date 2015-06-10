@@ -164,6 +164,9 @@ type Target struct {
 	deadline time.Duration
 	// The time between two scrapes.
 	scrapeInterval time.Duration
+	// Whether the target's labels have precedence over the base labels
+	// assigned by the scraping instance.
+	honorLabels bool
 }
 
 // NewTarget creates a reasonably configured target for querying.
@@ -196,10 +199,13 @@ func (t *Target) Update(cfg *config.ScrapeConfig, baseLabels, metaLabels clientm
 	if cfg.BasicAuth != nil {
 		t.url.User = url.UserPassword(cfg.BasicAuth.Username, cfg.BasicAuth.Password)
 	}
+	t.url.RawQuery = cfg.Params.Encode()
 
 	t.scrapeInterval = time.Duration(cfg.ScrapeInterval)
 	t.deadline = time.Duration(cfg.ScrapeTimeout)
 	t.httpClient = httputil.NewDeadlineClient(time.Duration(cfg.ScrapeTimeout))
+
+	t.honorLabels = cfg.HonorLabels
 
 	t.metaLabels = metaLabels
 	t.baseLabels = clientmodel.LabelSet{}
@@ -359,9 +365,22 @@ func (t *Target) scrape(sampleAppender storage.SampleAppender) (err error) {
 	}()
 
 	for samples := range t.ingestedSamples {
-		for _, s := range samples {
-			s.Metric.MergeFromLabelSet(baseLabels, clientmodel.ExporterLabelPrefix)
-			sampleAppender.Append(s)
+		if t.honorLabels {
+			for _, s := range samples {
+				// Overwrite baseLabels (copied version) with the labels from the ingested
+				// metric. Thus, the ingested labels always have precedence.
+				baseLabels.MergeFromMetric(s.Metric)
+				s.Metric = clientmodel.Metric(baseLabels)
+				sampleAppender.Append(s)
+			}
+		} else {
+			for _, s := range samples {
+				// Merge the ingested metric with the base label set. On a collision the
+				// value of the label set is stored in a label prefixed with the
+				// exporter prefix.
+				s.Metric.MergeFromLabelSet(baseLabels, clientmodel.ExporterLabelPrefix)
+				sampleAppender.Append(s)
+			}
 		}
 	}
 	return err
