@@ -272,7 +272,7 @@ func (s *memorySeriesStorage) WaitForIndexing() {
 	s.persistence.waitForIndexing()
 }
 
-// NewIterator implements storage.
+// NewIterator implements Storage.
 func (s *memorySeriesStorage) NewIterator(fp clientmodel.Fingerprint) SeriesIterator {
 	s.fpLocker.Lock(fp)
 	defer s.fpLocker.Unlock(fp)
@@ -448,6 +448,18 @@ func (s *memorySeriesStorage) DropMetricsForFingerprints(fps ...clientmodel.Fing
 
 		s.fpLocker.Unlock(fp)
 	}
+}
+
+// LastSampleForFingerprint implements Storage.
+func (s *memorySeriesStorage) LastSamplePairForFingerprint(fp clientmodel.Fingerprint) *metric.SamplePair {
+	s.fpLocker.Lock(fp)
+	defer s.fpLocker.Unlock(fp)
+
+	series, ok := s.fpToSeries.get(fp)
+	if !ok {
+		return nil
+	}
+	return series.head().lastSamplePair()
 }
 
 // Append implements Storage.

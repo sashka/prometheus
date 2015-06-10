@@ -43,6 +43,9 @@ type Storage interface {
 	LabelValuesForLabelName(clientmodel.LabelName) clientmodel.LabelValues
 	// Get the metric associated with the provided fingerprint.
 	MetricForFingerprint(clientmodel.Fingerprint) clientmodel.COWMetric
+	// LastSamplePairForFingerprint returns the last sample pair for the provided fingerprint.
+	// If the respective time series is evicted, nil is returned.
+	LastSamplePairForFingerprint(clientmodel.Fingerprint) *metric.SamplePair
 	// Construct an iterator for a given fingerprint.
 	// The iterator will never return samples older than retention time,
 	// relative to the time NewIterator was called.
