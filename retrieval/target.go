@@ -334,7 +334,7 @@ func (t *Target) scrape(sampleAppender storage.SampleAppender) (err error) {
 		recordScrapeHealth(sampleAppender, clientmodel.TimestampFromTime(start), baseLabels, t.status.Health(), time.Since(start))
 	}()
 
-	req, err := http.NewRequest("GET", t.URL(), nil)
+	req, err := http.NewRequest("GET", t.URL().String(), nil)
 	if err != nil {
 		panic(err)
 	}
@@ -367,10 +367,13 @@ func (t *Target) scrape(sampleAppender storage.SampleAppender) (err error) {
 	for samples := range t.ingestedSamples {
 		if t.honorLabels {
 			for _, s := range samples {
-				// Overwrite baseLabels (copied version) with the labels from the ingested
-				// metric. Thus, the ingested labels always have precedence.
-				baseLabels.MergeFromMetric(s.Metric)
-				s.Metric = clientmodel.Metric(baseLabels)
+				// Merge the metric with the baseLabels for labels not already
+				// set in the metric.
+				for ln, lv := range baseLabels {
+					if _, ok := s.Metric[ln]; !ok {
+						s.Metric[ln] = lv
+					}
+				}
 				sampleAppender.Append(s)
 			}
 		} else {
@@ -387,10 +390,12 @@ func (t *Target) scrape(sampleAppender storage.SampleAppender) (err error) {
 }
 
 // URL implements Target.
-func (t *Target) URL() string {
+func (t *Target) URL() *url.URL {
 	t.RLock()
 	defer t.RUnlock()
-	return t.url.String()
+	u := &url.URL{}
+	*u = *t.url
+	return u
 }
 
 // InstanceIdentifier returns the identifier for the target.

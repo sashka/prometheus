@@ -20,6 +20,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -180,16 +181,18 @@ func getTemplate(name string, pathPrefix string) (*template.Template, error) {
 			}
 			return lset
 		},
-		"globalURL": func(url string) string {
+		"globalURL": func(u *url.URL) *url.URL {
 			hostname, err := getHostname()
 			if err != nil {
 				log.Warnf("Couldn't get hostname: %s, returning target.URL()", err)
-				return url
+				return u
 			}
-			for _, localhostRepresentation := range localhostRepresentations {
-				url = strings.Replace(url, "//"+localhostRepresentation, "//"+hostname, 1)
+			for _, lhr := range localhostRepresentations {
+				if strings.HasPrefix(u.Host, lhr+":") {
+					u.Host = strings.Replace(u.Host, lhr+":", hostname+":", 1)
+				}
 			}
-			return url
+			return u
 		},
 	})
 
