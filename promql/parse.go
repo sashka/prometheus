@@ -883,6 +883,17 @@ func (p *parser) vectorSelector(name string) *VectorSelector {
 	if len(matchers) == 0 {
 		p.errorf("vector selector must contain label matchers or metric name")
 	}
+	// A vector selector must contain at least one non-empty matcher to prevent
+	// implicit select implicit selection of all metrics (e.g. by a typo).
+	numNotEmpty := 0
+	for _, lm := range matchers {
+		if lm.Value != "" {
+			numNotEmpty++
+		}
+	}
+	if numNotEmpty == 0 {
+		p.errorf("vector selector must contain at least one non-empty matcher")
+	}
 
 	var err error
 	var offset time.Duration
