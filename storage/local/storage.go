@@ -336,54 +336,21 @@ func (s *memorySeriesStorage) NewPreloader() Preloader {
 	}
 }
 
-// FingerprintsForLabelMatchers implements Storage.
-func (s *memorySeriesStorage) FingerprintsForLabelMatchers(labelMatchers metric.LabelMatchers) clientmodel.Fingerprints {
+// FingerprintsForLabels implements Storage.
+func (s *memorySeriesStorage) FingerprintsForLabels(pairs ...metric.LabelPair) map[clientmodel.Fingerprint]struct{} {
 	var result map[clientmodel.Fingerprint]struct{}
-	for _, matcher := range labelMatchers {
+	for _, pair := range pairs {
 		intersection := map[clientmodel.Fingerprint]struct{}{}
-		switch matcher.Type {
-		case metric.Equal:
-			fps, err := s.persistence.fingerprintsForLabelPair(
-				metric.LabelPair{
-					Name:  matcher.Name,
-					Value: matcher.Value,
-				},
-			)
-			if err != nil {
-				log.Error("Error getting fingerprints for label pair: ", err)
-			}
-			if len(fps) == 0 {
-				return nil
-			}
-			for _, fp := range fps {
-				if _, ok := result[fp]; ok || result == nil {
-					intersection[fp] = struct{}{}
-				}
-			}
-		default:
-			values, err := s.persistence.labelValuesForLabelName(matcher.Name)
-			if err != nil {
-				log.Errorf("Error getting label values for label name %q: %v", matcher.Name, err)
-			}
-			matches := matcher.Filter(values)
-			if len(matches) == 0 {
-				return nil
-			}
-			for _, v := range matches {
-				fps, err := s.persistence.fingerprintsForLabelPair(
-					metric.LabelPair{
-						Name:  matcher.Name,
-						Value: v,
-					},
-				)
-				if err != nil {
-					log.Error("Error getting fingerprints for label pair: ", err)
-				}
-				for _, fp := range fps {
-					if _, ok := result[fp]; ok || result == nil {
-						intersection[fp] = struct{}{}
-					}
-				}
+		fps, err := s.persistence.fingerprintsForLabelPair(pair)
+		if err != nil {
+			log.Error("Error getting fingerprints for label pair: ", err)
+		}
+		if len(fps) == 0 {
+			return nil
+		}
+		for _, fp := range fps {
+			if _, ok := result[fp]; ok || result == nil {
+				intersection[fp] = struct{}{}
 			}
 		}
 		if len(intersection) == 0 {
@@ -391,12 +358,74 @@ func (s *memorySeriesStorage) FingerprintsForLabelMatchers(labelMatchers metric.
 		}
 		result = intersection
 	}
+	return result
+}
 
-	fps := make(clientmodel.Fingerprints, 0, len(result))
-	for fp := range result {
-		fps = append(fps, fp)
+// MetricsForLabelMatchers returns the metrics from storage that satisfy the given label matchers.
+func MetricsForLabelMatchers(storage Storage, matchers ...*metric.LabelMatcher) map[clientmodel.Fingerprint]clientmodel.COWMetric {
+	var (
+		equals  []metric.LabelPair
+		filters []*metric.LabelMatcher
+	)
+	for _, lm := range matchers {
+		if lm.Type == metric.Equal && lm.Value != "" {
+			equals = append(equals, metric.LabelPair{
+				Name:  lm.Name,
+				Value: lm.Value,
+			})
+		} else {
+			filters = append(filters, lm)
+		}
 	}
-	return fps
+
+	var resFPs map[clientmodel.Fingerprint]struct{}
+	// If we cannot make a preselection based on equality matchers, expanding the other matchers to labels
+	// and intersecting their fingerprints is still likely to be the best choice.
+	if len(equals) > 0 {
+		resFPs = storage.FingerprintsForLabels(equals...)
+	} else {
+		var remaining metric.LabelMatchers
+		for _, matcher := range filters {
+			// Equal matches are all empty values.
+			if matcher.Type == metric.Equal {
+				remaining = append(remaining, matcher)
+				continue
+			}
+			intersection := map[clientmodel.Fingerprint]struct{}{}
+
+			matches := matcher.Filter(storage.LabelValuesForLabelName(matcher.Name))
+			if len(matches) == 0 {
+				return nil
+			}
+			for _, v := range matches {
+				fps := storage.FingerprintsForLabels(metric.LabelPair{
+					Name:  matcher.Name,
+					Value: v,
+				})
+				for fp := range fps {
+					if _, ok := resFPs[fp]; ok || resFPs == nil {
+						intersection[fp] = struct{}{}
+					}
+				}
+			}
+			resFPs = intersection
+		}
+		// The intersected matchers no longer need to be compared against the actual metrics.
+		filters = remaining
+	}
+
+	result := make(map[clientmodel.Fingerprint]clientmodel.COWMetric, len(resFPs))
+	for fp := range resFPs {
+		result[fp] = storage.MetricForFingerprint(fp)
+	}
+	for _, matcher := range filters {
+		for fp, met := range result {
+			if !matcher.Match(met.Metric[matcher.Name]) {
+				delete(result, fp)
+			}
+		}
+	}
+	return result
 }
 
 // LabelValuesForLabelName implements Storage.

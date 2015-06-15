@@ -36,9 +36,9 @@ type Storage interface {
 	// NewPreloader returns a new Preloader which allows preloading and pinning
 	// series data into memory for use within a query.
 	NewPreloader() Preloader
-	// Get all of the metric fingerprints that are associated with the
-	// provided label matchers.
-	FingerprintsForLabelMatchers(metric.LabelMatchers) clientmodel.Fingerprints
+	// FingerprintsForLabels returns the set of fingerprints that have the given labels.
+	// This does not work with empty label values.
+	FingerprintsForLabels(...metric.LabelPair) map[clientmodel.Fingerprint]struct{}
 	// Get all of the label values that are associated with a given label name.
 	LabelValuesForLabelName(clientmodel.LabelName) clientmodel.LabelValues
 	// Get the metric associated with the provided fingerprint.
