@@ -32,6 +32,7 @@ core
 /prometheus
 benchmark.txt
 /data
+/bin
 
 .#*
 command-line-arguments.test
